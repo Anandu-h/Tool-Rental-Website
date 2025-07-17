@@ -1,4 +1,4 @@
-// Minimal EventEmitter2 shim for wagmi/WalletConnect compatibility
+// EventEmitter2 shim for wagmi/walletconnect compatibility
 export class EventEmitter2 {
   private events: Map<string, Function[]> = new Map()
 
@@ -10,24 +10,34 @@ export class EventEmitter2 {
     return this
   }
 
-  off(event: string, listener: Function): this {
-    const listeners = this.events.get(event)
-    if (listeners) {
-      const index = listeners.indexOf(listener)
-      if (index > -1) {
-        listeners.splice(index, 1)
-      }
+  off(event: string, listener?: Function): this {
+    if (!this.events.has(event)) return this
+
+    if (!listener) {
+      this.events.delete(event)
+      return this
+    }
+
+    const listeners = this.events.get(event)!
+    const index = listeners.indexOf(listener)
+    if (index > -1) {
+      listeners.splice(index, 1)
     }
     return this
   }
 
   emit(event: string, ...args: any[]): boolean {
-    const listeners = this.events.get(event)
-    if (listeners) {
-      listeners.forEach((listener) => listener(...args))
-      return true
-    }
-    return false
+    if (!this.events.has(event)) return false
+
+    const listeners = this.events.get(event)!
+    listeners.forEach((listener) => {
+      try {
+        listener(...args)
+      } catch (error) {
+        console.error("EventEmitter2 listener error:", error)
+      }
+    })
+    return true
   }
 
   once(event: string, listener: Function): this {
@@ -47,9 +57,15 @@ export class EventEmitter2 {
     return this
   }
 
-  addListener = this.on
-  removeListener = this.off
+  listeners(event: string): Function[] {
+    return this.events.get(event) || []
+  }
+
+  listenerCount(event: string): number {
+    return this.listeners(event).length
+  }
 }
 
 // Export both named and default for maximum compatibility
 export default EventEmitter2
+export { EventEmitter2 as EventEmitter }

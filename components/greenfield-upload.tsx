@@ -2,73 +2,57 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useCallback } from "react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "@/hooks/use-toast"
-import { Upload, FileImage, CheckCircle, AlertCircle, Cloud } from "lucide-react"
+import { Upload, X, CheckCircle, AlertCircle, ImageIcon, File } from "lucide-react"
 import { greenfieldClient, type UploadResult } from "@/lib/greenfield-storage"
+import { toast } from "@/hooks/use-toast"
 
 interface GreenfieldUploadProps {
-  onUploadComplete?: (result: UploadResult) => void
+  onUploadComplete: (result: UploadResult) => void
   acceptedTypes?: string[]
   maxSize?: number // in MB
-  className?: string
+  multiple?: boolean
 }
 
 export function GreenfieldUpload({
   onUploadComplete,
   acceptedTypes = ["image/*"],
   maxSize = 10,
-  className = "",
+  multiple = false,
 }: GreenfieldUploadProps) {
-  const [uploading, setUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file: File; result: UploadResult }>>([])
 
-  const handleFileSelect = (files: FileList | null) => {
-    if (!files || files.length === 0) return
-
-    const file = files[0]
-
-    // Validate file size
+  const validateFile = (file: File): string | null => {
+    // Check file size
     if (file.size > maxSize * 1024 * 1024) {
-      toast({
-        title: "File Too Large",
-        description: `File size must be less than ${maxSize}MB`,
-        variant: "destructive",
-      })
-      return
+      return `File size must be less than ${maxSize}MB`
     }
 
-    // Validate file type
+    // Check file type
     const isValidType = acceptedTypes.some((type) => {
-      if (type.endsWith("/*")) {
-        return file.type.startsWith(type.replace("/*", "/"))
-      }
+      if (type === "image/*") return file.type.startsWith("image/")
+      if (type === "video/*") return file.type.startsWith("video/")
+      if (type === "audio/*") return file.type.startsWith("audio/")
       return file.type === type
     })
 
     if (!isValidType) {
-      toast({
-        title: "Invalid File Type",
-        description: `Please select a file of type: ${acceptedTypes.join(", ")}`,
-        variant: "destructive",
-      })
-      return
+      return `File type not supported. Accepted types: ${acceptedTypes.join(", ")}`
     }
 
-    uploadToGreenfield(file)
+    return null
   }
 
-  const uploadToGreenfield = async (file: File) => {
-    setUploading(true)
+  const uploadFile = async (file: File) => {
+    setIsUploading(true)
     setUploadProgress(0)
-    setUploadResult(null)
 
     try {
       // Simulate progress updates
@@ -86,165 +70,238 @@ export function GreenfieldUpload({
 
       clearInterval(progressInterval)
       setUploadProgress(100)
-      setUploadResult(result)
 
       if (result.success) {
+        const uploadedFile = { file, result }
+        setUploadedFiles((prev) => [...prev, uploadedFile])
+        onUploadComplete(result)
+
         toast({
-          title: "Upload Successful!",
-          description: "File uploaded to BNB Greenfield",
+          title: "Upload Successful",
+          description: `${file.name} uploaded to BNB Greenfield`,
         })
-        onUploadComplete?.(result)
       } else {
         toast({
           title: "Upload Failed",
-          description: result.error || "Unknown error occurred",
+          description: result.error || "Failed to upload file",
           variant: "destructive",
         })
       }
     } catch (error) {
       toast({
         title: "Upload Error",
-        description: "Failed to upload to Greenfield",
+        description: "An unexpected error occurred during upload",
         variant: "destructive",
       })
-      setUploadResult({
-        success: false,
-        error: "Upload failed",
-      })
     } finally {
-      setUploading(false)
+      setIsUploading(false)
+      setTimeout(() => setUploadProgress(0), 1000)
     }
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(true)
+  const handleFiles = async (files: FileList) => {
+    const fileArray = Array.from(files)
+
+    if (!multiple && fileArray.length > 1) {
+      toast({
+        title: "Multiple Files Not Allowed",
+        description: "Please select only one file",
+        variant: "destructive",
+      })
+      return
+    }
+
+    for (const file of fileArray) {
+      const error = validateFile(file)
+      if (error) {
+        toast({
+          title: "Invalid File",
+          description: error,
+          variant: "destructive",
+        })
+        continue
+      }
+
+      await uploadFile(file)
+
+      if (!multiple) break // Only upload one file if multiple is false
+    }
   }
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    setDragOver(false)
+    setIsDragging(false)
+
+    if (e.dataTransfer.files) {
+      handleFiles(e.dataTransfer.files)
+    }
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }, [])
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(e.target.files)
+    }
   }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    handleFileSelect(e.dataTransfer.files)
+  const removeFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const getFileIcon = (file: File) => {
+    if (file.type.startsWith("image/")) return <ImageIcon className="w-8 h-8 text-[#F0B90B]" />
+    return <File className="w-8 h-8 text-[#F0B90B]" />
   }
 
   return (
-    <Card className={`bg-[#181A20] border-gray-700 ${className}`}>
-      <CardHeader>
-        <CardTitle className="text-white flex items-center gap-2">
-          <Cloud className="w-5 h-5 text-[#F0B90B]" />
-          BNB Greenfield Upload
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Upload Area */}
-        <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-            dragOver ? "border-[#F0B90B] bg-[#F0B90B]/5" : "border-gray-600 hover:border-[#F0B90B]"
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
+    <div className="space-y-4">
+      {/* Upload Area */}
+      <Card
+        className={`border-2 border-dashed transition-colors cursor-pointer ${
+          isDragging
+            ? "border-[#F0B90B] bg-[#F0B90B]/5"
+            : isUploading
+              ? "border-blue-500 bg-blue-500/5"
+              : "border-gray-600 hover:border-[#F0B90B] bg-[#181A20]"
+        }`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        <CardContent className="p-8 text-center">
           <input
-            ref={fileInputRef}
             type="file"
-            accept={acceptedTypes.join(",")}
-            onChange={(e) => handleFileSelect(e.target.files)}
+            id="file-upload"
             className="hidden"
+            accept={acceptedTypes.join(",")}
+            multiple={multiple}
+            onChange={handleFileInput}
+            disabled={isUploading}
           />
 
-          {uploading ? (
+          {isUploading ? (
             <div className="space-y-4">
-              <Upload className="w-12 h-12 text-[#F0B90B] mx-auto animate-bounce" />
-              <div>
-                <p className="text-white font-medium">Uploading to Greenfield...</p>
-                <Progress value={uploadProgress} className="mt-2" />
-                <p className="text-gray-400 text-sm mt-1">{uploadProgress}% complete</p>
+              <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto">
+                <Upload className="w-8 h-8 text-blue-500 animate-pulse" />
               </div>
-            </div>
-          ) : uploadResult ? (
-            <div className="space-y-4">
-              {uploadResult.success ? (
-                <>
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
-                  <div>
-                    <p className="text-white font-medium">Upload Successful!</p>
-                    <p className="text-gray-400 text-sm">File stored on BNB Greenfield</p>
-                    {uploadResult.hash && (
-                      <Badge className="mt-2 bg-green-500/10 text-green-400 border-green-500/20">
-                        Hash: {uploadResult.hash.substring(0, 16)}...
-                      </Badge>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-                  <div>
-                    <p className="text-white font-medium">Upload Failed</p>
-                    <p className="text-gray-400 text-sm">{uploadResult.error}</p>
-                  </div>
-                </>
-              )}
+              <div>
+                <p className="text-white font-medium mb-2">Uploading to BNB Greenfield...</p>
+                <Progress value={uploadProgress} className="w-full max-w-xs mx-auto" />
+                <p className="text-gray-400 text-sm mt-2">{uploadProgress}% complete</p>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <FileImage className="w-12 h-12 text-gray-400 mx-auto" />
+              <div className="w-16 h-16 bg-[#F0B90B]/10 rounded-full flex items-center justify-center mx-auto">
+                <Upload className="w-8 h-8 text-[#F0B90B]" />
+              </div>
               <div>
-                <p className="text-white font-medium">Drop files here or click to browse</p>
-                <p className="text-gray-400 text-sm">
-                  Supports {acceptedTypes.join(", ")} up to {maxSize}MB
+                <p className="text-white font-medium mb-2">
+                  {isDragging ? "Drop files here" : "Upload to BNB Greenfield"}
                 </p>
-                <p className="text-[#F0B90B] text-xs mt-2">
-                  Files will be stored on BNB Greenfield decentralized storage
+                <p className="text-gray-400 text-sm mb-4">
+                  Drag and drop files or{" "}
+                  <label htmlFor="file-upload" className="text-[#F0B90B] hover:underline cursor-pointer">
+                    browse
+                  </label>
                 </p>
+                <div className="flex flex-wrap justify-center gap-2 text-xs text-gray-500">
+                  <span>Max size: {maxSize}MB</span>
+                  <span>•</span>
+                  <span>Types: {acceptedTypes.join(", ")}</span>
+                  {multiple && (
+                    <>
+                      <span>•</span>
+                      <span>Multiple files allowed</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2">
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex-1 bg-[#F0B90B] text-black hover:bg-[#D4A017]"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Select File
-          </Button>
-          {uploadResult && (
-            <Button
-              onClick={() => {
-                setUploadResult(null)
-                setUploadProgress(0)
-              }}
-              variant="outline"
-              className="border-gray-600 text-gray-300"
-            >
-              Reset
-            </Button>
-          )}
+      {/* Uploaded Files */}
+      {uploadedFiles.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-white font-medium">Uploaded Files</h4>
+          {uploadedFiles.map((item, index) => (
+            <Card key={index} className="bg-[#0B0E11] border-gray-700">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {getFileIcon(item.file)}
+                    <div>
+                      <p className="text-white font-medium">{item.file.name}</p>
+                      <div className="flex items-center space-x-2 text-sm text-gray-400">
+                        <span>{formatFileSize(item.file.size)}</span>
+                        {item.result.success && (
+                          <>
+                            <span>•</span>
+                            <Badge className="bg-green-500/10 text-green-400 border-green-500/20">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Uploaded
+                            </Badge>
+                          </>
+                        )}
+                        {!item.result.success && (
+                          <>
+                            <span>•</span>
+                            <Badge className="bg-red-500/10 text-red-400 border-red-500/20">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              Failed
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                      {item.result.hash && <p className="text-xs text-gray-500 mt-1">Hash: {item.result.hash}</p>}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFile(index)}
+                    className="text-gray-400 hover:text-red-400"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
+      )}
 
-        {/* Greenfield Info */}
-        <div className="bg-[#0B0E11] rounded-lg p-4 border border-gray-700">
-          <div className="flex items-center gap-2 mb-2">
-            <Cloud className="w-4 h-4 text-[#F0B90B]" />
-            <span className="text-white text-sm font-medium">BNB Greenfield Storage</span>
+      {/* Greenfield Info */}
+      <Card className="bg-[#F0B90B]/5 border-[#F0B90B]/20">
+        <CardContent className="p-4">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-[#F0B90B] rounded-full animate-pulse"></div>
+            <p className="text-[#F0B90B] text-sm font-medium">BNB Greenfield Storage</p>
           </div>
-          <p className="text-gray-400 text-xs">
-            Your files are stored on BNB Greenfield, a decentralized storage network that ensures data availability,
-            integrity, and censorship resistance.
+          <p className="text-gray-300 text-xs mt-1">
+            Files are stored on decentralized storage with permanent availability and content addressing.
           </p>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

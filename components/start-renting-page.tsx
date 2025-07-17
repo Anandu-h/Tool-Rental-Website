@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Slider } from "@/components/ui/slider"
-import { Search, MapPin, Star, Grid3X3, List, SlidersHorizontal, Clock, Shield, Zap } from "lucide-react"
+import { RentalBooking } from "@/components/rental-booking"
+import { Search, MapPin, Star, Grid3X3, List, SlidersHorizontal, Clock, Shield, Zap, ArrowLeft } from "lucide-react"
 import Image from "next/image"
 import type { Tool } from "@/lib/contracts"
 
 interface StartRentingPageProps {
-  onRentTool: (tool: Tool) => void
+  onRentTool?: (tool: Tool) => void
 }
 
 export function StartRentingPage({ onRentTool }: StartRentingPageProps) {
@@ -23,6 +24,8 @@ export function StartRentingPage({ onRentTool }: StartRentingPageProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [sortBy, setSortBy] = useState("relevance")
   const [showFilters, setShowFilters] = useState(false)
+  const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
+  const [showBooking, setShowBooking] = useState(false)
 
   const categories = [
     { id: "all", name: "All Categories", count: 156 },
@@ -136,6 +139,43 @@ export function StartRentingPage({ onRentTool }: StartRentingPageProps) {
         return 0
     }
   })
+
+  const handleRentClick = (tool: Tool) => {
+    setSelectedTool(tool)
+    setShowBooking(true)
+    onRentTool?.(tool)
+  }
+
+  const handleBookingClose = () => {
+    setShowBooking(false)
+    setSelectedTool(null)
+  }
+
+  const handleBookingSuccess = () => {
+    setShowBooking(false)
+    setSelectedTool(null)
+    // Could trigger a refresh of available tools here
+  }
+
+  if (showBooking && selectedTool) {
+    return (
+      <div className="min-h-screen bg-[#0B0E11] py-8">
+        <div className="container mx-auto px-4">
+          <div className="mb-6">
+            <Button
+              variant="ghost"
+              onClick={handleBookingClose}
+              className="text-gray-300 hover:text-[#F0B90B] hover:bg-gray-800"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Search
+            </Button>
+          </div>
+          <RentalBooking tool={selectedTool} onClose={handleBookingClose} onSuccess={handleBookingSuccess} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#0B0E11] py-8">
@@ -343,7 +383,7 @@ export function StartRentingPage({ onRentTool }: StartRentingPageProps) {
                       size="sm"
                       className="bg-[#F0B90B] text-black hover:bg-[#D4A017]"
                       disabled={!tool.isAvailable}
-                      onClick={() => onRentTool(tool)}
+                      onClick={() => handleRentClick(tool)}
                     >
                       {tool.isAvailable ? "Rent Now" : "Unavailable"}
                     </Button>
@@ -421,7 +461,7 @@ export function StartRentingPage({ onRentTool }: StartRentingPageProps) {
                             size="sm"
                             className="bg-[#F0B90B] text-black hover:bg-[#D4A017]"
                             disabled={!tool.isAvailable}
-                            onClick={() => onRentTool(tool)}
+                            onClick={() => handleRentClick(tool)}
                           >
                             {tool.isAvailable ? "Rent Now" : "Unavailable"}
                           </Button>

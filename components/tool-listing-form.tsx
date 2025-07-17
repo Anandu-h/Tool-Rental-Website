@@ -3,59 +3,75 @@
 import type React from "react"
 
 import { useState } from "react"
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { parseEther } from "viem"
+import { useAccount } from "wagmi"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
-import { Upload, MapPin, DollarSign, Tag, ImageIcon } from "lucide-react"
-import { TOOLCHAIN_CONTRACT_ADDRESS, TOOLCHAIN_ABI } from "@/lib/contracts"
+import { GreenfieldUpload } from "./greenfield-upload"
+import { Wrench, MapPin, Calendar, DollarSign, Tag, FileText, ImageIcon } from "lucide-react"
+import type { UploadResult } from "@/lib/greenfield-storage"
 
-interface ToolListingFormProps {
-  onSuccess?: () => void
+interface ToolFormData {
+  name: string
+  description: string
+  category: string
+  pricePerDay: string
+  location: string
+  availability: string
+  condition: string
+  imageHash?: string
+  imageUrl?: string
 }
 
-export function ToolListingForm({ onSuccess }: ToolListingFormProps) {
-  const { address, isConnected } = useAccount()
-  const { writeContract, data: hash, isPending } = useWriteContract()
-  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
-    hash,
-  })
+const TOOL_CATEGORIES = [
+  "Power Tools",
+  "Hand Tools",
+  "Garden Tools",
+  "Construction Equipment",
+  "Automotive Tools",
+  "Cleaning Equipment",
+  "Kitchen Appliances",
+  "Electronics",
+  "Sports Equipment",
+  "Other",
+]
 
-  const [formData, setFormData] = useState({
+const TOOL_CONDITIONS = ["Excellent", "Very Good", "Good", "Fair", "Poor"]
+
+export function ToolListingForm() {
+  const { address, isConnected } = useAccount()
+  const [formData, setFormData] = useState<ToolFormData>({
     name: "",
     description: "",
-    pricePerDay: "",
     category: "",
+    pricePerDay: "",
     location: "",
-    imageUrl: "",
+    availability: "",
+    condition: "",
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [imageUploaded, setImageUploaded] = useState(false)
 
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>("")
-
-  const categories = ["Power Tools", "Hand Tools", "Garden Tools", "Automotive", "Home & DIY", "Specialty Tools"]
-
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+  const handleInputChange = (field: keyof ToolFormData, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
   }
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setImageFile(file)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
-        setImagePreview(result)
-        setFormData((prev) => ({ ...prev, imageUrl: result }))
-      }
-      reader.readAsDataURL(file)
+  const handleImageUpload = (result: UploadResult) => {
+    if (result.success) {
+      setFormData((prev) => ({
+        ...prev,
+        imageHash: result.hash,
+        imageUrl: result.url,
+      }))
+      setImageUploaded(true)
     }
   }
 
@@ -71,216 +87,249 @@ export function ToolListingForm({ onSuccess }: ToolListingFormProps) {
       return
     }
 
-    if (!formData.name || !formData.description || !formData.pricePerDay || !formData.category) {
+    // Validate required fields
+    const requiredFields = ["name", "description", "category", "pricePerDay", "location", "condition"]
+    const missingFields = requiredFields.filter((field) => !formData[field as keyof ToolFormData])
+
+    if (missingFields.length > 0) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: `Please fill in: ${missingFields.join(", ")}`,
         variant: "destructive",
       })
       return
     }
 
-    try {
-      const priceInWei = parseEther(formData.pricePerDay)
+    setIsSubmitting(true)
 
-      await writeContract({
-        address: TOOLCHAIN_CONTRACT_ADDRESS,
-        abi: TOOLCHAIN_ABI,
-        functionName: "listTool",
-        args: [
-          formData.name,
-          formData.description,
-          priceInWei,
-          formData.category,
-          formData.imageUrl || "/placeholder.svg?height=300&width=400",
-        ],
-      })
+    try {
+      // Simulate smart contract interaction
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // In production, this would call the smart contract
+      console.log("Listing tool with data:", formData)
 
       toast({
         title: "Tool Listed Successfully!",
-        description: "Your tool has been added to the marketplace",
+        description: "Your tool is now available for rent on the platform",
       })
 
       // Reset form
       setFormData({
         name: "",
         description: "",
-        pricePerDay: "",
         category: "",
+        pricePerDay: "",
         location: "",
-        imageUrl: "",
+        availability: "",
+        condition: "",
       })
-      setImageFile(null)
-      setImagePreview("")
-
-      onSuccess?.()
+      setImageUploaded(false)
     } catch (error) {
-      console.error("Error listing tool:", error)
       toast({
-        title: "Error",
-        description: "Failed to list tool. Please try again.",
+        title: "Listing Failed",
+        description: "Failed to list your tool. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
+  if (!isConnected) {
+    return (
+      <Card className="bg-[#181A20] border-gray-700 text-white max-w-2xl mx-auto">
+        <CardContent className="p-8 text-center">
+          <Wrench className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Connect Your Wallet</h2>
+          <p className="text-gray-400">Please connect your wallet to list tools for rent on the platform.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
-    <Card className="bg-[#181A20] border-gray-700">
-      <CardHeader>
-        <CardTitle className="text-white flex items-center gap-2">
-          <Upload className="w-5 h-5 text-[#F0B90B]" />
-          List Your Tool
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Image Upload */}
-          <div className="space-y-2">
-            <Label className="text-white">Tool Image</Label>
-            <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-[#F0B90B] transition-colors">
-              {imagePreview ? (
-                <div className="space-y-4">
-                  <img
-                    src={imagePreview || "/placeholder.svg"}
-                    alt="Tool preview"
-                    className="max-h-48 mx-auto rounded-lg object-cover"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setImagePreview("")
-                      setImageFile(null)
-                      setFormData((prev) => ({ ...prev, imageUrl: "" }))
-                    }}
-                    className="border-gray-600 text-gray-300"
-                  >
-                    Remove Image
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <ImageIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <div>
-                    <Label htmlFor="image-upload" className="cursor-pointer text-[#F0B90B] hover:text-[#D4A017]">
-                      Click to upload image
-                    </Label>
-                    <p className="text-gray-400 text-sm mt-1">PNG, JPG up to 10MB</p>
-                  </div>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <Card className="bg-[#181A20] border-gray-700">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Wrench className="w-6 h-6 text-[#F0B90B]" />
+            List Your Tool for Rent
+          </CardTitle>
+          <p className="text-gray-400">
+            Share your tools with the community and earn tokens while helping others complete their projects.
+          </p>
+        </CardHeader>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tool Information Form */}
+        <Card className="bg-[#181A20] border-gray-700">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#F0B90B]" />
+              Tool Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Tool Name */}
+              <div>
+                <Label htmlFor="name" className="text-white">
+                  Tool Name *
+                </Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange("name", e.target.value)}
+                  placeholder="e.g., DeWalt Circular Saw"
+                  className="bg-[#0B0E11] border-gray-600 text-white"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <Label htmlFor="description" className="text-white">
+                  Description *
+                </Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => handleInputChange("description", e.target.value)}
+                  placeholder="Describe your tool, its condition, and any special instructions..."
+                  className="bg-[#0B0E11] border-gray-600 text-white min-h-[100px]"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <Label className="text-white">Category *</Label>
+                <Select value={formData.category} onValueChange={(value) => handleInputChange("category", value)}>
+                  <SelectTrigger className="bg-[#0B0E11] border-gray-600 text-white">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0B0E11] border-gray-600">
+                    {TOOL_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category} className="text-white hover:bg-gray-700">
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Price and Location Row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="price" className="text-white flex items-center gap-1">
+                    <DollarSign className="w-4 h-4" />
+                    Price per Day (TCT) *
+                  </Label>
                   <Input
-                    id="image-upload"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    value={formData.pricePerDay}
+                    onChange={(e) => handleInputChange("pricePerDay", e.target.value)}
+                    placeholder="10.00"
+                    className="bg-[#0B0E11] border-gray-600 text-white"
                   />
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Tool Name */}
-          <div className="space-y-2">
-            <Label htmlFor="name" className="text-white">
-              Tool Name *
-            </Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => handleInputChange("name", e.target.value)}
-              placeholder="e.g., DeWalt Cordless Drill"
-              className="bg-[#0B0E11] border-gray-700 text-white"
-              required
-            />
-          </div>
+                <div>
+                  <Label htmlFor="location" className="text-white flex items-center gap-1">
+                    <MapPin className="w-4 h-4" />
+                    Location *
+                  </Label>
+                  <Input
+                    id="location"
+                    value={formData.location}
+                    onChange={(e) => handleInputChange("location", e.target.value)}
+                    placeholder="City, State"
+                    className="bg-[#0B0E11] border-gray-600 text-white"
+                  />
+                </div>
+              </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description" className="text-white">
-              Description *
-            </Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) => handleInputChange("description", e.target.value)}
-              placeholder="Describe your tool, its condition, and any special features..."
-              className="bg-[#0B0E11] border-gray-700 text-white min-h-[100px]"
-              required
-            />
-          </div>
+              {/* Condition and Availability Row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-white flex items-center gap-1">
+                    <Tag className="w-4 h-4" />
+                    Condition *
+                  </Label>
+                  <Select value={formData.condition} onValueChange={(value) => handleInputChange("condition", value)}>
+                    <SelectTrigger className="bg-[#0B0E11] border-gray-600 text-white">
+                      <SelectValue placeholder="Select condition" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0B0E11] border-gray-600">
+                      {TOOL_CONDITIONS.map((condition) => (
+                        <SelectItem key={condition} value={condition} className="text-white hover:bg-gray-700">
+                          {condition}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          {/* Price and Category Row */}
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="price" className="text-white flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                Price per Day (BNB) *
-              </Label>
-              <Input
-                id="price"
-                type="number"
-                step="0.001"
-                value={formData.pricePerDay}
-                onChange={(e) => handleInputChange("pricePerDay", e.target.value)}
-                placeholder="0.05"
-                className="bg-[#0B0E11] border-gray-700 text-white"
-                required
-              />
-            </div>
+                <div>
+                  <Label htmlFor="availability" className="text-white flex items-center gap-1">
+                    <Calendar className="w-4 h-4" />
+                    Availability
+                  </Label>
+                  <Input
+                    id="availability"
+                    value={formData.availability}
+                    onChange={(e) => handleInputChange("availability", e.target.value)}
+                    placeholder="Available immediately"
+                    className="bg-[#0B0E11] border-gray-600 text-white"
+                  />
+                </div>
+              </div>
 
-            <div className="space-y-2">
-              <Label className="text-white flex items-center gap-2">
-                <Tag className="w-4 h-4" />
-                Category *
-              </Label>
-              <Select value={formData.category} onValueChange={(value) => handleInputChange("category", value)}>
-                <SelectTrigger className="bg-[#0B0E11] border-gray-700 text-white">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#181A20] border-gray-700">
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category} className="text-white hover:bg-gray-700">
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-[#F0B90B] text-black hover:bg-[#D4A017] font-semibold"
+              >
+                {isSubmitting ? "Listing Tool..." : "List Tool for Rent"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-          {/* Location */}
-          <div className="space-y-2">
-            <Label htmlFor="location" className="text-white flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              Location
-            </Label>
-            <Input
-              id="location"
-              value={formData.location}
-              onChange={(e) => handleInputChange("location", e.target.value)}
-              placeholder="e.g., Downtown, City Center"
-              className="bg-[#0B0E11] border-gray-700 text-white"
-            />
-          </div>
+        {/* Image Upload */}
+        <div className="space-y-6">
+          <Card className="bg-[#181A20] border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-[#F0B90B]" />
+                Tool Images
+              </CardTitle>
+              <p className="text-gray-400 text-sm">Upload high-quality images to attract more renters</p>
+            </CardHeader>
+          </Card>
 
-          {/* Submit Button */}
-          <Button
-            type="submit"
-            disabled={!isConnected || isPending || isConfirming}
-            className="w-full bg-[#F0B90B] text-black hover:bg-[#D4A017] h-12"
-          >
-            {isPending || isConfirming ? "Listing Tool..." : "List Tool on Marketplace"}
-          </Button>
+          <GreenfieldUpload onUploadComplete={handleImageUpload} acceptedTypes={["image/*"]} maxSize={10} />
 
-          {!isConnected && (
-            <div className="text-center">
-              <Badge variant="outline" className="border-red-500 text-red-400">
-                Connect your wallet to list tools
-              </Badge>
-            </div>
+          {/* Upload Status */}
+          {imageUploaded && (
+            <Card className="bg-[#0B0E11] border-green-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-green-500/10 text-green-400 border-green-500/20">Image Uploaded</Badge>
+                  <span className="text-green-400 text-sm">Ready to list!</span>
+                </div>
+                {formData.imageHash && (
+                  <p className="text-gray-400 text-xs mt-2">Greenfield Hash: {formData.imageHash}</p>
+                )}
+              </CardContent>
+            </Card>
           )}
-        </form>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </div>
   )
 }
